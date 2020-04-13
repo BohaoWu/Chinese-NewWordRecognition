@@ -4,19 +4,28 @@ from collections import defaultdict, Counter
 import numpy as np
 import ahocorasick
 import math
+import jieba
 
 
-def read_text(file_articles, encoding='utf8'):
+def read_text(file_articles, stopwords, encoding='utf8'):
     texts = set()
     with open(file_articles, encoding=encoding) as f:
         for line in f.readlines():
             line = re.split(u'[^\u4e00-\u9fa50-9a-zA-Z]+', line)
+            line = " ".join(line)
+            line = jieba.cut(line.strip(), cut_all=False)
             for s in line:
-                if len(s) > 1:
+                if len(s) > 1 and s not in stopwords:
                     texts.add(s)
 
     print('文章数(即文本行数)：{}'.format(len(texts)))
     return texts
+
+
+def get_stopwords():
+    with open('data/stopword.txt', 'r', encoding='utf-8', errors='ignore') as f:
+        stopword = [line.strip() for line in f]
+    return set(stopword)
 
 
 def get_ngrams_counts(texts, n, min_count):
@@ -38,8 +47,6 @@ def get_ngrams_counts(texts, n, min_count):
     print('字数：{}'.format(total))
 
     return ngrams, total
-
-
 
 
 def filter_with_porba(s, min_proba, total, ngrams):
@@ -92,6 +99,16 @@ def is_real(s, n, ngrams):
         return True
 
 
+def dir_entropy(dict_gram, direction):
+    one_dir_entropy = dict_gram[direction]
+    if len(set(one_dir_entropy)) == 1 and one_dir_entropy[0] == ' ':
+        entropy = -1  # 如果左边界为空，则将其设置为-1
+    else:
+        list_dir = list(Counter(one_dir_entropy).values())
+        sum_dir = sum(list_dir)
+        entropy = sum([-(i / sum_dir) * math.log(i / sum_dir) for i in list_dir])
+    return entropy
+
 
 def cal_entropy(dict_gram,key):
     '''
@@ -100,28 +117,14 @@ def cal_entropy(dict_gram,key):
     :param key:
     :return:
     '''
-    left = dict_gram['left']
-    if len(set(left)) ==1 and left[0] ==' ' :
-        entropy_left = -1  # 如果左边界为空，则将其设置为-1
-    else:
-        list_left = list(Counter(left).values())
-        sum_left = sum(list_left)
-        entropy_left = sum([-(i / sum_left) * math.log(i / sum_left) for i in list_left])
+    entropy_left = dir_entropy(dict_gram, "left")
+    entropy_right = dir_entropy(dict_gram, "right")
 
-    right = dict_gram['right']
-    if  len(set(right)) ==1 and right[0] ==' ' :
-        entropy_right = -1  # 如果右边界为空，则将其设置为-1
-    else:
-        list_right = list(Counter(right).values())
-        sum_right = sum(list_right)
-        entropy_right = sum([ -(i/sum_right)*math.log(i/sum_right) for i in list_right])
-
-    if entropy_left==-1 and entropy_right==-1:
-        entropy =-2   # 如果左右边界熵都为空，将其设置为-2
+    if entropy_left == -1 and entropy_right==-1:
+        entropy =- 2   # 如果左右边界熵都为空，将其设置为-2
     else:
         entropy = min(entropy_left, entropy_right)
-    return  entropy
-
+    return entropy
 
 
 class AC_Unicode:
@@ -129,11 +132,14 @@ class AC_Unicode:
     """
     def __init__(self):
         self.ac = ahocorasick.Automaton()
+
     def add_word(self, k, v):
         # k = k.encode('utf-8')
         return self.ac.add_word(k, v)
+
     def make_automaton(self):
         return self.ac.make_automaton()
+
     def iter(self, s):
         # 搜索文本中存在的单词
         # s = s.encode('utf-8')
@@ -228,8 +234,9 @@ def get_new_words( file_in, file_dict, file_out, min_count, min_proba):
     import time
     start = time.time()
 
-    n = 4 # 默认ngrams中的n为4
-    texts = read_text(file_in, encoding='utf8')  # 读取数据
+    n = 5 # 默认ngrams中的n为4
+    stopwords = get_stopwords()
+    texts = read_text(file_in, stopwords, encoding='utf8')  # 读取数据
     ngrams, total = get_ngrams_counts(texts, n, min_count)  # 获取ngrams
     ngrams_filter = set(i for i, j in ngrams.items() if filter_with_porba(i, min_proba, total, ngrams))  # 计算凝固度，并根据阈值过滤ngrams
 
@@ -256,15 +263,13 @@ def get_new_words( file_in, file_dict, file_out, min_count, min_proba):
     print('花费时间：{}分钟'.format(round((end - start) / 60, 2)))
 
 
-
-
 if __name__ == '__main__':
 
     min_count = 2
-    min_proba = {2: 50, 3: 1000, 4: 500}
-    file_in = './weibo_text_mini.txt'   # utf8
-    file_dict = './dict_sogou_vec.txt'  # utf8
-    file_out = './find_words_.csv'  # gbk
+    min_proba = {2: 50, 3: 1000, 4: 500, 5: 200, 6: 150, 7: 100, 8: 50}
+    file_in = './data/weibo_text_mini.txt'   # utf8
+    file_dict = './data/dict_sogou_vec.txt'  # utf8
+    file_out = './data/find_words_.csv'  # gbk
 
     get_new_words(file_in, file_dict, file_out, min_count, min_proba)
 
